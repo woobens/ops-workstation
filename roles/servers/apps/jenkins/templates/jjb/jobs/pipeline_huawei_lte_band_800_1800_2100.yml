@@ -1,0 +1,79 @@
+---
+- job:
+    name: Huawei LTE band 800+1800+2100
+    project-type: pipeline
+    sandbox: true
+    triggers:
+      - timed: '0 23 * * *'
+    parameters:
+      - string:
+          name: "BRANCH_ANSIBLE_OPS_WORKSTATION"
+          default: "main"
+          trim: true
+          description: "Branch name repo: ops-workstation"
+      - string:
+          name: "BRANCH_ANSIBLE_OPS_PRIVATE"
+          default: "main"
+          trim: true
+          description: "Branch name repo: ansible-ops-private"
+      - bool:
+          name: DYNAMIC_SQM_ENABLED
+          default: false
+          description: "Enable dynamic SQM on OpenWRT"
+    dsl-yaml: |
+      pipeline:
+        agent:
+          any:
+        options:
+          - ansiColor('xterm')
+          - disableConcurrentBuilds()
+          - skipDefaultCheckout()
+        stages:
+          - stage: "Checkout ops-workstation"
+            steps:
+              script:
+                - dir: "'ops-workstation'"
+                  script:
+                    - >-
+                      git(
+                        url: "git@github.com:woobens/ops-workstation.git",
+                        branch: "$params.BRANCH_ANSIBLE_OPS_WORKSTATION"
+                      )
+          - stage: "Checkout ansible-ops-private"
+            steps:
+              script:
+                - dir: "'ansible-ops-private'"
+                  script:
+                    - >-
+                      git(
+                        url: "git@github.com:woobens/ansible-ops-private.git",
+                        branch: "$params.BRANCH_ANSIBLE_OPS_PRIVATE"
+                      )
+          - stage: "Unlock git-crypt"
+            steps:
+              script:
+                - dir: "'ansible-ops-private'"
+                  script:
+                    - |
+                      sh """#!/bin/bash
+                        id
+                        pwd
+                        ls
+                        git-crypt unlock ~jenkins/secrets/git_crypt_key
+                      """
+          - stage: "Ansible LTE Band set"
+            steps:
+              script:
+                  - |
+                    sh """#!/bin/bash
+                      cd ops-workstation/playbooks
+                      ansible-playbook -i ../../ansible-ops-private/inventory/hosts.yml huawei-lte-setband-800+1800+2100.yml
+                    """
+          - stage: "Ansible SQM disable"
+            steps:
+              script:
+                  - |
+                    sh """#!/bin/bash
+                      cd ops-workstation/playbooks
+                      ansible-playbook -e dynamic_sqm_enabled=$params.DYNAMIC_SQM_ENABLED -i ../../ansible-ops-private/inventory/hosts.yml openwrt-sqm.yml
+                    """
